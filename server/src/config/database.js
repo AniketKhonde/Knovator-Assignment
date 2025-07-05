@@ -9,6 +9,21 @@ const connectDB = async () => {
     try {
       logger.info(`MongoDB connection attempt ${attempt}/${maxRetries}`);
       
+      // Log connection details (without credentials)
+      const uri = process.env.MONGODB_URI;
+      if (uri) {
+        const uriParts = uri.split('@');
+        if (uriParts.length > 1) {
+          const hostPart = uriParts[1];
+          logger.info(`Connecting to MongoDB at: ${hostPart}`);
+        } else {
+          logger.info('MongoDB URI format appears to be invalid');
+        }
+      } else {
+        logger.error('MONGODB_URI environment variable is not set');
+        throw new Error('MONGODB_URI environment variable is not set');
+      }
+      
       const conn = await mongoose.connect(process.env.MONGODB_URI, {
         serverSelectionTimeoutMS: 30000, // Increased to 30 seconds
         socketTimeoutMS: 60000, // Increased to 60 seconds
@@ -19,7 +34,6 @@ const connectDB = async () => {
         retryWrites: true,
         retryReads: true,
         bufferCommands: true,
-        bufferMaxEntries: 0,
         // Additional options for better connection handling
         family: 4, // Force IPv4
         autoIndex: false, // Disable auto-indexing for faster startup
@@ -50,7 +64,12 @@ const connectDB = async () => {
       return conn; // Success, exit retry loop
       
     } catch (error) {
-      logger.error(`MongoDB connection attempt ${attempt} failed:`, error.message);
+      logger.error(`MongoDB connection attempt ${attempt} failed:`, {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+        stack: error.stack
+      });
       
       if (attempt === maxRetries) {
         logger.error('MongoDB connection failed after all retries');

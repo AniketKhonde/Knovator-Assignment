@@ -83,6 +83,59 @@ app.get('/status', async (req, res) => {
   }
 });
 
+// MongoDB test endpoint
+app.get('/test-mongodb', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    
+    // Check if MONGODB_URI is set
+    if (!process.env.MONGODB_URI) {
+      return res.status(500).json({
+        error: 'MONGODB_URI environment variable is not set',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Log connection details (without credentials)
+    const uri = process.env.MONGODB_URI;
+    const uriParts = uri.split('@');
+    const hostPart = uriParts.length > 1 ? uriParts[1] : 'Invalid URI format';
+    
+    // Test connection
+    const startTime = Date.now();
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 20000,
+      connectTimeoutMS: 10000,
+      maxPoolSize: 1,
+      family: 4
+    });
+    const duration = Date.now() - startTime;
+    
+    // Test a simple query
+    const collections = await conn.connection.db.listCollections().toArray();
+    
+    res.json({
+      success: true,
+      message: 'MongoDB connection successful',
+      host: conn.connection.host,
+      database: conn.connection.name,
+      duration: `${duration}ms`,
+      collections: collections.length,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      name: error.name,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // API routes
 app.use('/api/import', importRoutes);
 app.use('/api/import-logs', importLogsRoutes);
