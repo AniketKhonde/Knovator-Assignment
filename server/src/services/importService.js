@@ -245,6 +245,12 @@ class ImportService {
       return stats;
     } catch (error) {
       logger.error('Error getting queue stats:', error);
+      
+      // Check if it's a timeout or connection issue
+      if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
+        logger.warn('Queue stats failed due to timeout/connection issue. Using fallback values.');
+      }
+      
       // Return empty stats as fallback
       return {
         waiting: 0,

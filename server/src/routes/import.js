@@ -3,8 +3,28 @@ const router = express.Router();
 const importService = require('../services/importService');
 const cronService = require('../services/cronService');
 const socketService = require('../services/socketService');
+const queueService = require('../services/queueService');
 const ImportLog = require('../models/ImportLog');
 const logger = require('../utils/logger');
+
+// @route   GET /api/import/health
+// @desc    Get queue service health status
+// @access  Public
+router.get('/health', async (req, res) => {
+  try {
+    const health = await queueService.healthCheck();
+    res.json({
+      success: true,
+      data: health
+    });
+  } catch (error) {
+    logger.error('Error getting queue health:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get queue health status'
+    });
+  }
+});
 
 // @route   GET /api/import/status
 // @desc    Get current import status
@@ -126,6 +146,45 @@ router.get('/socket/status', (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get socket status'
+    });
+  }
+});
+
+// @route   POST /api/import/start
+// @desc    Start manual import process
+// @access  Public
+router.post('/start', async (req, res) => {
+  try {
+    // Check if import is already running
+    if (importService.isRunning) {
+      return res.status(409).json({
+        success: false,
+        error: 'Import is already running'
+      });
+    }
+
+    // Start import in background
+    importService.startImport()
+      .then((result) => {
+        logger.info('Manual import completed successfully:', result);
+      })
+      .catch((error) => {
+        logger.error('Manual import failed:', error);
+      });
+
+    res.json({
+      success: true,
+      message: 'Import process started successfully',
+      data: {
+        importId: importService.currentImportId,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    logger.error('Error starting import:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to start import process'
     });
   }
 });

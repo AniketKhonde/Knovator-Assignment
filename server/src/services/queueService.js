@@ -1,5 +1,5 @@
 const { Queue, Worker } = require('bullmq');
-const { getRedisClient } = require('../config/redis');
+const { getRedisClient, getRedisStatus } = require('../config/redis');
 const logger = require('../utils/logger');
 
 class QueueService {
@@ -14,11 +14,20 @@ class QueueService {
     if (this.isInitialized) return;
     
     try {
-      await getRedisClient(); // Ensure Redis is connected
+      // Test Redis connection with timeout
+      const redisClient = getRedisClient();
+      const pingPromise = redisClient.ping();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Redis initialization timeout')), 10000);
+      });
+      
+      await Promise.race([pingPromise, timeoutPromise]);
+      
       this.isInitialized = true;
-      logger.info('Queue service initialized');
+      logger.info('Queue service initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize queue service:', error);
+      this.isInitialized = false;
       throw error;
     }
   }
@@ -27,7 +36,17 @@ class QueueService {
   getQueue(name) {
     if (!this.queues.has(name)) {
       const queue = new Queue(name, {
-        connection: getRedisClient(),
+        connection: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: process.env.REDIS_PORT || 6379,
+          password: process.env.REDIS_PASSWORD,
+          db: process.env.REDIS_DB || 0,
+          maxRetriesPerRequest: 3,
+          enableReadyCheck: true,
+          retryDelayOnFailover: 100,
+          maxRetriesPerRequest: 3,
+          lazyConnect: true
+        },
         defaultJobOptions: {
           removeOnComplete: 100, // Keep last 100 completed jobs
           removeOnFail: 50,      // Keep last 50 failed jobs
@@ -54,7 +73,16 @@ class QueueService {
     }
 
     const worker = new Worker(queueName, processor, {
-      connection: getRedisClient(),
+      connection: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+        password: process.env.REDIS_PASSWORD,
+        db: process.env.REDIS_DB || 0,
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        retryDelayOnFailover: 100,
+        lazyConnect: true
+      },
       concurrency: options.concurrency || parseInt(process.env.CONCURRENCY) || 5,
       ...options
     });
@@ -113,9 +141,9 @@ class QueueService {
     
     logger.info(`addJob: Adding job with data size: ${JSON.stringify(jobData).length} characters`);
     
-    // Add timeout to prevent hanging
+    // Add timeout to prevent hanging - increased from 10 to 20 seconds
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Queue add operation timed out after 10 seconds')), 10000);
+      setTimeout(() => reject(new Error('Queue add operation timed out after 20 seconds')), 20000);
     });
     
     const addJobPromise = queue.add(
@@ -166,17 +194,26 @@ class QueueService {
     try {
       const queue = this.getQueue(queueName);
       
-      // Add timeout to prevent hanging
+      // Add timeout to prevent hanging - increased from 5 to 15 seconds
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Queue stats operation timed out after 5 seconds')), 5000);
+        setTimeout(() => reject(new Error('Queue stats operation timed out after 15 seconds')), 15000);
       });
       
+      // Add individual timeouts for each operation to prevent hanging
+      const getStatsWithTimeout = async (operation, timeout = 3000) => {
+        const operationPromise = operation();
+        const operationTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Operation timed out after ${timeout}ms`)), timeout);
+        });
+        return Promise.race([operationPromise, operationTimeout]);
+      };
+      
       const statsPromise = Promise.all([
-        queue.getWaiting(),
-        queue.getActive(),
-        queue.getCompleted(),
-        queue.getFailed(),
-        queue.getDelayed()
+        getStatsWithTimeout(() => queue.getWaiting()),
+        getStatsWithTimeout(() => queue.getActive()),
+        getStatsWithTimeout(() => queue.getCompleted()),
+        getStatsWithTimeout(() => queue.getFailed()),
+        getStatsWithTimeout(() => queue.getDelayed())
       ]);
       
       const [waiting, active, completed, failed, delayed] = await Promise.race([statsPromise, timeoutPromise]);
@@ -190,6 +227,12 @@ class QueueService {
       };
     } catch (error) {
       logger.error(`Error getting queue stats for ${queueName}:`, error);
+      
+      // Check if it's a Redis connection issue
+      if (error.message.includes('ECONNREFUSED') || error.message.includes('timeout')) {
+        logger.warn(`Redis connection issue detected for queue stats. Returning fallback values.`);
+      }
+      
       // Return empty stats as fallback
       return {
         waiting: 0,
@@ -266,6 +309,66 @@ class QueueService {
   // Get queue instance
   getQueueInstance(name) {
     return this.queues.get(name);
+  }
+
+  // Health check for queue service
+  async healthCheck() {
+    try {
+      // Test Redis connection directly
+      const Redis = require('redis');
+      const testClient = Redis.createClient({
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+        password: process.env.REDIS_PASSWORD,
+        db: process.env.REDIS_DB || 0
+      });
+      
+      await testClient.connect();
+      await testClient.ping();
+      await testClient.disconnect();
+      
+      // Test queue operations if queues exist
+      if (this.queues.size > 0) {
+        const queueNames = Array.from(this.queues.keys());
+        const testQueue = this.queues.get(queueNames[0]);
+        
+        if (testQueue) {
+          // Test basic queue operation with timeout
+          const testPromise = testQueue.getWaiting();
+          const testTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Queue operation timeout')), 5000);
+          });
+          
+          await Promise.race([testPromise, testTimeoutPromise]);
+        }
+      }
+      
+      return {
+        status: 'healthy',
+        redis: 'connected',
+        queues: this.queues.size,
+        workers: this.workers.size,
+        connection: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: process.env.REDIS_PORT || 6379,
+          db: process.env.REDIS_DB || 0
+        }
+      };
+    } catch (error) {
+      logger.error('Queue service health check failed:', error);
+      return {
+        status: 'unhealthy',
+        redis: 'disconnected',
+        error: error.message,
+        queues: this.queues.size,
+        workers: this.workers.size,
+        connection: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: process.env.REDIS_PORT || 6379,
+          db: process.env.REDIS_DB || 0
+        }
+      };
+    }
   }
 }
 

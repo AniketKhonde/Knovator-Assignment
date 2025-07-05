@@ -8,23 +8,31 @@ const connectRedis = async () => {
     redisClient = Redis.createClient({
       url: process.env.REDIS_URL,
       socket: {
-        connectTimeout: 10000, // 10 second timeout
-        commandTimeout: 5000,  // 5 second timeout for commands
+        connectTimeout: 15000, // Increased to 15 seconds
+        commandTimeout: 10000, // Increased to 10 seconds for commands
+        keepAlive: 30000,      // Keep alive every 30 seconds
+        reconnectStrategy: (retries) => {
+          if (retries > 20) {
+            logger.error('Redis max reconnection attempts reached');
+            return new Error('Max reconnection attempts reached');
+          }
+          return Math.min(retries * 1000, 10000);
+        }
       },
       retry_strategy: (options) => {
         if (options.error && options.error.code === 'ECONNREFUSED') {
           logger.error('Redis server refused connection');
           return new Error('Redis server refused connection');
         }
-        if (options.total_retry_time > 1000 * 60 * 60) {
+        if (options.total_retry_time > 1000 * 60 * 60 * 2) { // Increased to 2 hours
           logger.error('Redis retry time exhausted');
           return new Error('Retry time exhausted');
         }
-        if (options.attempt > 10) {
+        if (options.attempt > 20) { // Increased max attempts
           logger.error('Redis max retry attempts reached');
           return undefined;
         }
-        return Math.min(options.attempt * 100, 3000);
+        return Math.min(options.attempt * 200, 5000); // Increased backoff
       }
     });
 
@@ -67,8 +75,26 @@ const disconnectRedis = async () => {
   }
 };
 
+const isRedisConnected = () => {
+  return redisClient && redisClient.isReady;
+};
+
+const getRedisStatus = () => {
+  if (!redisClient) {
+    return { status: 'not_initialized' };
+  }
+  
+  return {
+    status: redisClient.isReady ? 'connected' : 'disconnected',
+    isReady: redisClient.isReady,
+    isOpen: redisClient.isOpen
+  };
+};
+
 module.exports = {
   connectRedis,
   getRedisClient,
-  disconnectRedis
+  disconnectRedis,
+  isRedisConnected,
+  getRedisStatus
 }; 
