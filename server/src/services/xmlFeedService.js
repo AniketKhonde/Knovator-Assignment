@@ -7,7 +7,21 @@ class XMLFeedService {
     this.parser = new xml2js.Parser({
       explicitArray: false,
       ignoreAttrs: true,
-      trim: true
+      trim: true,
+      strict: false,
+      normalize: true,
+      normalizeTags: true,
+      explicitChildren: false,
+      mergeAttrs: false,
+      attrNameProcessors: [],
+      tagNameProcessors: [],
+      valueProcessors: [],
+      emptyTag: '',
+      renderOpts: {
+        pretty: false,
+        indent: '',
+        newline: ''
+      }
     });
     
     this.timeout = parseInt(process.env.REQUEST_TIMEOUT) || 30000;
@@ -18,6 +32,8 @@ class XMLFeedService {
   async fetchFeed(feedUrl, feedName) {
     const startTime = Date.now();
     let retries = 0;
+    
+    let xmlData = null;
     
     while (retries < this.maxRetries) {
       try {
@@ -35,7 +51,18 @@ class XMLFeedService {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const xmlData = response.data;
+        xmlData = response.data;
+        
+        // Check if the response is actually XML
+        if (!xmlData || typeof xmlData !== 'string') {
+          throw new Error('Response is not valid XML data');
+        }
+        
+        // Check if the response contains XML-like content
+        if (!xmlData.includes('<') || !xmlData.includes('>')) {
+          throw new Error('Response does not contain XML content');
+        }
+        
         const parsedData = await this.parseXML(xmlData);
         const jobs = this.extractJobs(parsedData, feedUrl, feedName);
         
@@ -55,12 +82,25 @@ class XMLFeedService {
         
         if (retries >= this.maxRetries) {
           const duration = Date.now() - startTime;
+          
+          // Try to extract basic information even if XML parsing failed
+          let fallbackJobs = [];
+          try {
+            if (xmlData && typeof xmlData === 'string') {
+              fallbackJobs = this.extractJobsFromRawXML(xmlData, feedUrl, feedName);
+              logger.info(`Extracted ${fallbackJobs.length} jobs using fallback method from ${feedName}`);
+            }
+          } catch (fallbackError) {
+            logger.warn(`Fallback extraction also failed for ${feedName}:`, fallbackError.message);
+          }
+          
           return {
-            jobs: [],
-            totalFetched: 0,
+            jobs: fallbackJobs,
+            totalFetched: fallbackJobs.length,
             duration,
-            success: false,
-            error: error.message
+            success: fallbackJobs.length > 0,
+            error: error.message,
+            usedFallback: fallbackJobs.length > 0
           };
         }
         
@@ -71,13 +111,81 @@ class XMLFeedService {
     }
   }
 
+  // Clean and validate XML string
+  cleanXML(xmlString) {
+    let cleaned = xmlString;
+    
+    // Remove BOM and other encoding issues
+    cleaned = cleaned.replace(/^\uFEFF/, '');
+    
+    // Remove null bytes
+    cleaned = cleaned.replace(/\x00/g, '');
+    
+    // Fix common malformed attribute issues
+    cleaned = cleaned.replace(/(\w+)\s*=\s*(?!["'])/g, '$1=""');
+    
+    // Remove any HTML entities that might cause issues
+    cleaned = cleaned.replace(/&(?!(amp|lt|gt|quot|apos);)/g, '&amp;');
+    
+    // Ensure proper XML declaration
+    if (!cleaned.includes('<?xml')) {
+      cleaned = '<?xml version="1.0" encoding="UTF-8"?>\n' + cleaned;
+    }
+    
+    return cleaned;
+  }
+
   // Parse XML string to JSON
   async parseXML(xmlString) {
     try {
-      return await this.parser.parseStringPromise(xmlString);
+      // First, clean the XML string
+      const cleanedXml = this.cleanXML(xmlString);
+      
+      // Try to parse the cleaned XML
+      return await this.parser.parseStringPromise(cleanedXml);
     } catch (error) {
       logger.error('XML parsing error:', error);
-      throw new Error(`Failed to parse XML: ${error.message}`);
+      
+      // If the first attempt fails, try with more aggressive cleaning
+      try {
+        logger.info('Attempting to parse XML with aggressive cleaning...');
+        
+        // Remove all attributes that might be causing issues
+        let aggressiveCleanedXml = xmlString
+          .replace(/\x00/g, '')
+          .replace(/\s+\w+\s*=\s*(?!["'])/g, '')
+          .replace(/\s+\w+\s*=\s*"[^"]*"/g, '')
+          .replace(/\s+\w+\s*=\s*'[^']*'/g, '')
+          .replace(/^\uFEFF/, '');
+        
+        // Try to parse with a more lenient parser configuration
+        const lenientParser = new xml2js.Parser({
+          explicitArray: false,
+          ignoreAttrs: true,
+          trim: true,
+          strict: false,
+          normalize: true,
+          normalizeTags: true,
+          explicitChildren: false,
+          mergeAttrs: false,
+          emptyTag: '',
+          renderOpts: {
+            pretty: false,
+            indent: '',
+            newline: ''
+          }
+        });
+        
+        return await lenientParser.parseStringPromise(aggressiveCleanedXml);
+      } catch (secondError) {
+        logger.error('XML parsing failed even with aggressive cleaning:', secondError);
+        
+        // Log a sample of the problematic XML for debugging
+        const sampleXml = xmlString.substring(0, 500) + '...';
+        logger.error('Problematic XML sample:', sampleXml);
+        
+        throw new Error(`Failed to parse XML after cleaning attempts: ${error.message}`);
+      }
     }
   }
 
@@ -227,6 +335,85 @@ class XMLFeedService {
     }
     
     return 'mid'; // Default to mid-level
+  }
+
+  // Fallback method to extract jobs from raw XML when parsing fails
+  extractJobsFromRawXML(xmlString, feedUrl, feedName) {
+    try {
+      const jobs = [];
+      
+      // Simple regex-based extraction for common job feed patterns
+      const itemPatterns = [
+        /<item[^>]*>([\s\S]*?)<\/item>/gi,
+        /<entry[^>]*>([\s\S]*?)<\/entry>/gi,
+        /<job[^>]*>([\s\S]*?)<\/job>/gi
+      ];
+      
+      for (const pattern of itemPatterns) {
+        const matches = xmlString.match(pattern);
+        if (matches && matches.length > 0) {
+          for (const match of matches) {
+            try {
+              const job = this.extractJobFromRawXML(match, feedUrl, feedName);
+              if (job) {
+                jobs.push(job);
+              }
+            } catch (error) {
+              logger.warn(`Failed to extract job from raw XML:`, error.message);
+            }
+          }
+          break; // Use the first pattern that finds matches
+        }
+      }
+      
+      return jobs;
+    } catch (error) {
+      logger.error('Error in fallback job extraction:', error);
+      return [];
+    }
+  }
+
+  // Extract job data from raw XML string using regex
+  extractJobFromRawXML(xmlItem, feedUrl, feedName) {
+    try {
+      // Extract basic fields using regex
+      const titleMatch = xmlItem.match(/<title[^>]*>([^<]*)<\/title>/i);
+      const descriptionMatch = xmlItem.match(/<(description|summary|content)[^>]*>([^<]*)<\/\1>/i);
+      const linkMatch = xmlItem.match(/<link[^>]*>([^<]*)<\/link>/i);
+      const companyMatch = xmlItem.match(/<(company|employer|organization)[^>]*>([^<]*)<\/\1>/i);
+      const locationMatch = xmlItem.match(/<(location|city|place)[^>]*>([^<]*)<\/\1>/i);
+      
+      const title = titleMatch ? titleMatch[1].trim() : 'Untitled Job';
+      const description = descriptionMatch ? descriptionMatch[2].trim() : '';
+      const url = linkMatch ? linkMatch[1].trim() : '';
+      const company = companyMatch ? companyMatch[2].trim() : 'Unknown Company';
+      const location = locationMatch ? locationMatch[2].trim() : '';
+      
+      // Generate a unique GUID
+      const guid = `${feedUrl}-${Date.now()}-${Math.random()}`;
+      
+      return {
+        guid: guid.toString(),
+        title: title.toString().trim(),
+        description: description.toString().trim(),
+        company: company.toString().trim(),
+        location: location.toString().trim(),
+        jobType: '',
+        category: '',
+        salary: '',
+        url: url.toString().trim(),
+        pubDate: new Date(),
+        sourceFeed: feedUrl,
+        sourceName: feedName,
+        tags: [],
+        isRemote: this.detectRemoteWork(title, description, location),
+        experienceLevel: this.detectExperienceLevel(title, description),
+        status: 'active'
+      };
+    } catch (error) {
+      logger.error('Error extracting job from raw XML:', error);
+      return null;
+    }
   }
 
   // Sleep utility for retry delays
