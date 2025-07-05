@@ -100,21 +100,35 @@ const startServer = async () => {
   try {
     logger.info('Starting server initialization...');
     
-    // Connect to database with timeout
+    // Connect to database with timeout and retry logic
     logger.info('Connecting to MongoDB...');
-    const dbPromise = connectDB();
-    const dbTimeout = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('MongoDB connection timeout')), 15000)
-    );
-    await Promise.race([dbPromise, dbTimeout]);
+    try {
+      const dbPromise = connectDB();
+      const dbTimeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('MongoDB connection timeout')), 30000) // Increased to 30 seconds
+      );
+      await Promise.race([dbPromise, dbTimeout]);
+      logger.info('MongoDB connected successfully');
+    } catch (error) {
+      logger.error('MongoDB connection failed:', error.message);
+      logger.warn('Server will start without MongoDB connection. Some features may not work.');
+      // Don't exit, continue with server startup
+    }
     
-    // Connect to Redis with timeout
+    // Connect to Redis with timeout and retry logic
     logger.info('Connecting to Redis...');
-    const redisPromise = connectRedis();
-    const redisTimeout = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Redis connection timeout')), 10000)
-    );
-    await Promise.race([redisPromise, redisTimeout]);
+    try {
+      const redisPromise = connectRedis();
+      const redisTimeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Redis connection timeout')), 20000) // Increased to 20 seconds
+      );
+      await Promise.race([redisPromise, redisTimeout]);
+      logger.info('Redis connected successfully');
+    } catch (error) {
+      logger.error('Redis connection failed:', error.message);
+      logger.warn('Server will start without Redis connection. Queue features may not work.');
+      // Don't exit, continue with server startup
+    }
     
     // Initialize import service
     logger.info('Initializing import service...');
