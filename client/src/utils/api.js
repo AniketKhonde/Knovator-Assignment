@@ -51,9 +51,13 @@ api.interceptors.response.use(
     return response.data;
   },
   (error) => {
-    // Handle 502 Gateway errors specifically
+    // Handle different error types
     if (error.response?.status === 502) {
       console.warn('502 Gateway error - server may be starting up');
+    } else if (error.response?.status === 503) {
+      console.warn('503 Service Unavailable - database connection issue');
+    } else if (error.response?.status === 500) {
+      console.warn('500 Internal Server Error - server error');
     }
     
     const message = error.response?.data?.error || error.message || 'An error occurred';

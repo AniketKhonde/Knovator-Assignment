@@ -172,7 +172,28 @@ export default function Dashboard() {
       });
     } catch (error) {
       console.error('Error loading dashboard data:', error);
-      toast.error('Failed to load dashboard data');
+      
+      // Set default stats if API fails
+      setStats({
+        import: { isRunning: false },
+        importStats: {
+          totalImports: 0,
+          totalJobsFetched: 0,
+          totalJobsImported: 0,
+          totalNewJobs: 0,
+          totalUpdatedJobs: 0,
+          totalFailedJobs: 0,
+          avgDuration: 0,
+          successfulImports: 0,
+          failedImports: 0
+        }
+      });
+      
+      if (error.message.includes('Database connection not available')) {
+        toast.error('Database connection issue. Please try again later.');
+      } else {
+        toast.error('Failed to load dashboard data');
+      }
     } finally {
       setLoading(false);
     }
@@ -196,7 +217,20 @@ export default function Dashboard() {
       }));
     } catch (error) {
       console.error('Error loading import logs:', error);
-      toast.error('Failed to load import logs');
+      
+      // Set empty logs if API fails
+      setImportLogs([]);
+      setPagination(prev => ({
+        ...prev,
+        total: 0,
+        totalPages: 0
+      }));
+      
+      if (error.message.includes('Database connection not available')) {
+        toast.error('Database connection issue. Please try again later.');
+      } else {
+        toast.error('Failed to load import logs');
+      }
     } finally {
       setLogsLoading(false);
     }

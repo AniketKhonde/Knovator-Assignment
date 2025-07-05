@@ -8,6 +8,16 @@ const logger = require('../utils/logger');
 // @access  Public
 router.get('/', async (req, res) => {
   try {
+    // Check MongoDB connection
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      logger.error('MongoDB not connected. ReadyState:', mongoose.connection.readyState);
+      return res.status(503).json({
+        success: false,
+        error: 'Database connection not available'
+      });
+    }
+
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 15;
     const skip = (page - 1) * limit;
@@ -93,6 +103,16 @@ router.get('/', async (req, res) => {
 // @access  Public
 router.get('/stats/overview', async (req, res) => {
   try {
+    // Check MongoDB connection
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      logger.error('MongoDB not connected. ReadyState:', mongoose.connection.readyState);
+      return res.status(503).json({
+        success: false,
+        error: 'Database connection not available'
+      });
+    }
+
     const days = parseInt(req.query.days) || 30;
     const stats = await ImportLog.getStats(days);
     
@@ -119,5 +139,31 @@ router.get('/stats/overview', async (req, res) => {
 
 
 
+
+// @route   GET /api/import-logs/test
+// @desc    Test database connection
+// @access  Public
+router.get('/test', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const connectionState = mongoose.connection.readyState;
+    const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    
+    res.json({
+      success: true,
+      data: {
+        mongodb: states[connectionState] || 'unknown',
+        readyState: connectionState,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    logger.error('Error testing database connection:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Database test failed'
+    });
+  }
+});
 
 module.exports = router; 

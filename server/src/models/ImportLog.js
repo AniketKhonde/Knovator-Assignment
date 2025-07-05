@@ -123,46 +123,62 @@ importLogSchema.virtual('formattedDuration').get(function() {
 
 // Static method to get import statistics
 importLogSchema.statics.getStats = async function(days = 30) {
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  
-  const stats = await this.aggregate([
-    {
-      $match: {
-        timestamp: { $gte: startDate }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        totalImports: { $sum: 1 },
-        totalJobsFetched: { $sum: '$totalFetched' },
-        totalJobsImported: { $sum: '$totalImported' },
-        totalNewJobs: { $sum: '$newJobs' },
-        totalUpdatedJobs: { $sum: '$updatedJobs' },
-        totalFailedJobs: { $sum: { $size: '$failedJobs' } },
-        avgDuration: { $avg: '$duration' },
-        successfulImports: {
-          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
-        },
-        failedImports: {
-          $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    const stats = await this.aggregate([
+      {
+        $match: {
+          timestamp: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalImports: { $sum: 1 },
+          totalJobsFetched: { $sum: '$totalFetched' },
+          totalJobsImported: { $sum: '$totalImported' },
+          totalNewJobs: { $sum: '$newJobs' },
+          totalUpdatedJobs: { $sum: '$updatedJobs' },
+          totalFailedJobs: { $sum: { $size: '$failedJobs' } },
+          avgDuration: { $avg: '$duration' },
+          successfulImports: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          failedImports: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+          }
         }
       }
-    }
-  ]);
-  
-  return stats[0] || {
-    totalImports: 0,
-    totalJobsFetched: 0,
-    totalJobsImported: 0,
-    totalNewJobs: 0,
-    totalUpdatedJobs: 0,
-    totalFailedJobs: 0,
-    avgDuration: 0,
-    successfulImports: 0,
-    failedImports: 0
-  };
+    ]);
+    
+    return stats[0] || {
+      totalImports: 0,
+      totalJobsFetched: 0,
+      totalJobsImported: 0,
+      totalNewJobs: 0,
+      totalUpdatedJobs: 0,
+      totalFailedJobs: 0,
+      avgDuration: 0,
+      successfulImports: 0,
+      failedImports: 0
+    };
+  } catch (error) {
+    console.error('Error in getStats:', error);
+    // Return default stats if aggregation fails
+    return {
+      totalImports: 0,
+      totalJobsFetched: 0,
+      totalJobsImported: 0,
+      totalNewJobs: 0,
+      totalUpdatedJobs: 0,
+      totalFailedJobs: 0,
+      avgDuration: 0,
+      successfulImports: 0,
+      failedImports: 0
+    };
+  }
 };
 
 

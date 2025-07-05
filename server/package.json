@@ -10,8 +10,8 @@
     "dev": "nodemon src/index.js",
     "test": "jest",
     "import:manual": "node src/scripts/triggerImport.js",
-    "keep-alive": "node keep-alive.js"
-
+    "keep-alive": "node keep-alive.js",
+    "test:api": "node test-api.js"
   },
   "keywords": [
     "job-importer",
