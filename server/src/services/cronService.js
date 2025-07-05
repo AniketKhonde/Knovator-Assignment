@@ -23,7 +23,13 @@ class CronService {
 
       // Create cron job
       this.cronJob = cron.schedule(cronSchedule, async () => {
-        await this.executeScheduledImport();
+        try {
+          await this.executeScheduledImport();
+        } catch (error) {
+          logger.error('Cron job execution failed:', error);
+          // Don't let cron errors crash the server
+          // The cron will continue to run on the next schedule
+        }
       }, {
         scheduled: false, // Don't start immediately
         timezone: 'UTC'

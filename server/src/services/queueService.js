@@ -44,7 +44,6 @@ class QueueService {
           maxRetriesPerRequest: 3,
           enableReadyCheck: true,
           retryDelayOnFailover: 100,
-          maxRetriesPerRequest: 3,
           lazyConnect: true
         },
         defaultJobOptions: {
@@ -98,10 +97,17 @@ class QueueService {
 
     worker.on('error', (err) => {
       logger.error(`Worker error:`, err);
+      // Don't let worker errors crash the server
+      // The worker will automatically retry or fail gracefully
     });
 
     worker.on('stalled', (jobId) => {
       logger.warn(`Job ${jobId} stalled`);
+    });
+
+    // Add additional error handling for BullMQ v4
+    worker.on('closed', () => {
+      logger.info(`Worker for queue '${queueName}' closed`);
     });
 
     this.workers.set(queueName, worker);

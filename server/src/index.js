@@ -72,11 +72,23 @@ const startServer = async () => {
     
     // Initialize import service
     logger.info('Initializing import service...');
-    await importService.initialize();
+    try {
+      await importService.initialize();
+    } catch (error) {
+      logger.error('Failed to initialize import service:', error);
+      // Don't let import service failure crash the server
+      // The server can still function without import service
+    }
     
     // Initialize cron service
     logger.info('Initializing cron service...');
-    cronService.initialize();
+    try {
+      cronService.initialize();
+    } catch (error) {
+      logger.error('Failed to initialize cron service:', error);
+      // Don't let cron service failure crash the server
+      // The server can still function without cron
+    }
     
     // Create HTTP server
     const server = http.createServer(app);
@@ -96,6 +108,21 @@ const startServer = async () => {
 };
 
 startServer();
+
+// Global error handlers to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  // Only exit for critical errors
+  if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+    logger.error('Critical error, shutting down:', error);
+    process.exit(1);
+  }
+});
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
