@@ -22,8 +22,6 @@ const connectDB = async () => {
         bufferMaxEntries: 0,
         // Additional options for better connection handling
         family: 4, // Force IPv4
-        keepAlive: true,
-        keepAliveInitialDelay: 300000, // 5 minutes
         autoIndex: false, // Disable auto-indexing for faster startup
         maxConnecting: 2 // Limit concurrent connection attempts
       });
