@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: knovator-job-importer
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+    # Prevent sleep by setting minimum instances
+    minInstances: 1
+    # Health check configuration
+    healthCheckTimeout: 300
+    healthCheckInterval: 30
+    # Environment variables (these should be set in Render dashboard)
+    # - MONGODB_URI
+    # - REDIS_URL
+    # - CLIENT_URL
+    # - CRON_SCHEDULE 

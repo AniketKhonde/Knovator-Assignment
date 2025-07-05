@@ -37,6 +37,52 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Keep-alive endpoint to prevent server sleep
+app.get('/keep-alive', (req, res) => {
+  res.json({ 
+    status: 'awake', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// Root endpoint for basic connectivity test
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Knovator Job Importer API',
+    status: 'running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Connection status endpoint
+app.get('/status', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const { getRedisStatus } = require('./config/redis');
+    
+    const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    const redisStatus = getRedisStatus();
+    
+    res.json({
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      connections: {
+        mongodb: mongoStatus,
+        redis: redisStatus.status
+      },
+      memory: process.memoryUsage()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // API routes
 app.use('/api/import', importRoutes);
 app.use('/api/import-logs', importLogsRoutes);
