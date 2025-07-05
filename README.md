@@ -57,6 +57,12 @@ CRON_SCHEDULE="0 * * * *"  # Every hour
 
 # API Configuration
 REQUEST_TIMEOUT=30000
+MAX_RETRIES=3
+
+# Logging
+LOG_LEVEL=info 
+
+CLIENT_URL=http://localhost:3000
 ```
 
 ### 3. Frontend Setup
