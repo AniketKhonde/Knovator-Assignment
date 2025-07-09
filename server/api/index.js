@@ -31,6 +31,36 @@ app.use(morgan('combined', { stream: { write: message => logger.info(message.tri
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Database connection check middleware
+const checkDatabaseConnection = async (req, res, next) => {
+  const mongoose = require('mongoose');
+  
+  // Skip database check for health and status endpoints
+  if (req.path === '/api/health' || req.path === '/api/status' || req.path === '/api/test-mongodb') {
+    return next();
+  }
+  
+  if (mongoose.connection.readyState !== 1) {
+    logger.warn(`Database not connected for ${req.path}. ReadyState: ${mongoose.connection.readyState}`);
+    
+    // Try to reconnect if not connected
+    try {
+      await connectDB();
+      logger.info('Database reconnected successfully');
+      return next();
+    } catch (error) {
+      logger.error('Failed to reconnect to database:', error.message);
+      return res.status(503).json({
+        success: false,
+        error: 'Database connection not available',
+        details: error.message
+      });
+    }
+  }
+  
+  next();
+};
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -130,10 +160,36 @@ app.get('/api/test-mongodb', async (req, res) => {
   }
 });
 
-// API routes
-app.use('/api/import', importRoutes);
-app.use('/api/import-logs', importLogsRoutes);
-app.use('/api/jobs', jobsRoutes);
+// Database connection status endpoint
+app.get('/api/db-status', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    
+    res.json({
+      success: true,
+      data: {
+        readyState: mongoose.connection.readyState,
+        readyStateText: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
+        host: mongoose.connection.host || 'not connected',
+        name: mongoose.connection.name || 'not connected',
+        port: mongoose.connection.port || 'not connected',
+        hasMongoUri: !!process.env.MONGODB_URI,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Apply database connection check middleware to API routes
+app.use('/api/import', checkDatabaseConnection, importRoutes);
+app.use('/api/import-logs', checkDatabaseConnection, importLogsRoutes);
+app.use('/api/jobs', checkDatabaseConnection, jobsRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -148,6 +204,7 @@ socketService.initialize(server);
 
 // Initialize connections on cold start
 let isInitialized = false;
+let mongoConnected = false;
 
 const initializeConnections = async () => {
   if (isInitialized) return;
@@ -155,12 +212,29 @@ const initializeConnections = async () => {
   try {
     logger.info('Initializing connections for Vercel deployment...');
     
-    // Connect to MongoDB
-    try {
-      await connectDB();
-      logger.info('MongoDB connected successfully');
-    } catch (error) {
-      logger.error('MongoDB connection failed:', error.message);
+    // Connect to MongoDB with retry logic
+    let mongoRetries = 0;
+    const maxMongoRetries = 3;
+    
+    while (!mongoConnected && mongoRetries < maxMongoRetries) {
+      try {
+        mongoRetries++;
+        logger.info(`MongoDB connection attempt ${mongoRetries}/${maxMongoRetries}`);
+        
+        await connectDB();
+        mongoConnected = true;
+        logger.info('MongoDB connected successfully');
+      } catch (error) {
+        logger.error(`MongoDB connection attempt ${mongoRetries} failed:`, error.message);
+        
+        if (mongoRetries >= maxMongoRetries) {
+          logger.error('MongoDB connection failed after all retries');
+          // Don't throw error - allow service to continue
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 2000 * mongoRetries));
+        }
+      }
     }
     
     // Connect to Redis (optional for Vercel)
