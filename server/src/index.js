@@ -14,6 +14,7 @@ const logger = require('./utils/logger');
 // Import routes
 const importRoutes = require('./routes/import');
 const importLogsRoutes = require('./routes/importLogs');
+const jobsRoutes = require('./routes/jobs');
 const importService = require('./services/importService');
 const cronService = require('./services/cronService');
 const socketService = require('./services/socketService');
@@ -139,6 +140,7 @@ app.get('/test-mongodb', async (req, res) => {
 // API routes
 app.use('/api/import', importRoutes);
 app.use('/api/import-logs', importLogsRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

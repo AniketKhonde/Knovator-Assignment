@@ -120,6 +120,7 @@ npm run dev
 
 ### Admin Dashboard
 - ✅ **Real-time Status**: Live import status and queue statistics
+- ✅ **Manual Import**: Trigger import process manually with one-click button
 - ✅ **Import Logs**: Complete history with pagination and filters
 - ✅ **Statistics Overview**: 7-day import statistics
 - ✅ **Queue Monitoring**: BullMQ queue status and processing stats
@@ -136,6 +137,28 @@ The system automatically fetches jobs from these XML feeds:
 - Jobicy.com (multiple categories)
 - HigherEdJobs.com
 - Additional feeds configurable via environment variables
+
+## 🚀 Manual Import Feature
+
+The system includes a manual import feature that allows you to trigger job imports on-demand:
+
+### Frontend Integration
+- **Manual Import Button**: Located in the dashboard header and import logs section
+- **Real-time Feedback**: Shows loading state and import progress
+- **Status Indicators**: Visual feedback for import state (Ready/In Progress)
+- **Error Handling**: User-friendly error messages for failed imports
+
+### Backend API
+- **Endpoint**: `POST /api/import/start`
+- **Validation**: Prevents multiple simultaneous imports
+- **Real-time Updates**: Socket.IO events for live status updates
+- **Error Recovery**: Graceful handling of import failures
+
+### Usage
+1. Navigate to the dashboard
+2. Click the "Manual Import" button in the header or import logs section
+3. Monitor real-time progress through the dashboard
+4. View results in the import logs table
 
 ## 🛠️ Development
 

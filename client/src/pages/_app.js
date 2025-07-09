@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
+import { ThemeProvider } from '../contexts/ThemeContext';
 import '../styles/globals.css';
 
 function MyApp({ Component, pageProps }) {
@@ -9,7 +10,7 @@ function MyApp({ Component, pageProps }) {
   }, []);
 
   return (
-    <>
+    <ThemeProvider>
       <Component {...pageProps} />
       <Toaster
         position="top-right"
@@ -35,7 +36,7 @@ function MyApp({ Component, pageProps }) {
           },
         }}
       />
-    </>
+    </ThemeProvider>
   );
 }
 

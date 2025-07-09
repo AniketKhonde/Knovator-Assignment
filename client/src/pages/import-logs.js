@@ -88,6 +88,8 @@ export default function ImportLogs() {
       <Head>
         <title>Import Logs - Knovator Job Importer</title>
         <meta name="description" content="Import history and logs for Knovator Job Importer" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="shortcut icon" href="/favicon.ico" />
       </Head>
 
       <div className="min-h-screen bg-gray-50">

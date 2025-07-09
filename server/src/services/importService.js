@@ -24,20 +24,81 @@ class ImportService {
         
         try {
           // Process the job data
-          const { jobData, feedName, importLogId } = job.data;
+          const { jobData, feedName, feedUrl, importLogId } = job.data;
           
-          // Process individual jobs (simulate processing)
+          // Import Job model
+          const Job = require('../models/Job');
+          
           let processed = 0;
           let newJobs = 0;
           let updatedJobs = 0;
+          let failedJobs = [];
           
+          // Process individual jobs
           for (const jobItem of jobData) {
-            processed++;
-            // Simulate some jobs being new vs updated
-            if (Math.random() > 0.5) {
-              newJobs++;
-            } else {
-              updatedJobs++;
+            try {
+              processed++;
+              
+              // Check if job already exists
+              const existingJob = await Job.findOne({ 
+                originalGuid: jobItem.guid,
+                sourceFeed: feedUrl 
+              });
+              
+              if (existingJob) {
+                // Update existing job
+                existingJob.title = jobItem.title || existingJob.title;
+                existingJob.company = jobItem.company || existingJob.company;
+                existingJob.location = jobItem.location || existingJob.location;
+                existingJob.description = jobItem.description || existingJob.description;
+                existingJob.salary = jobItem.salary || existingJob.salary;
+                existingJob.requirements = jobItem.requirements || existingJob.requirements;
+                existingJob.type = jobItem.type || existingJob.type;
+                existingJob.category = jobItem.category || existingJob.category;
+                existingJob.industry = jobItem.industry || existingJob.industry;
+                existingJob.remote = jobItem.remote || existingJob.remote;
+                existingJob.applicationUrl = jobItem.applicationUrl || existingJob.applicationUrl;
+                existingJob.applicationEmail = jobItem.applicationEmail || existingJob.applicationEmail;
+                existingJob.publishedDate = jobItem.publishedDate || existingJob.publishedDate;
+                existingJob.rawData = jobItem;
+                existingJob.updatedAt = new Date();
+                
+                await existingJob.save();
+                updatedJobs++;
+              } else {
+                // Create new job
+                const newJob = new Job({
+                  title: jobItem.title,
+                  company: jobItem.company,
+                  location: jobItem.location,
+                  description: jobItem.description,
+                  salary: jobItem.salary,
+                  requirements: jobItem.requirements,
+                  type: jobItem.type,
+                  category: jobItem.category,
+                  industry: jobItem.industry,
+                  remote: jobItem.remote,
+                  applicationUrl: jobItem.applicationUrl,
+                  applicationEmail: jobItem.applicationEmail,
+                  sourceFeed: feedUrl,
+                  sourceName: feedName,
+                  originalGuid: jobItem.guid,
+                  publishedDate: jobItem.publishedDate,
+                  status: 'active',
+                  rawData: jobItem
+                });
+                
+                await newJob.save();
+                newJobs++;
+              }
+            } catch (jobError) {
+              logger.error(`Error processing individual job:`, jobError);
+              failedJobs.push({
+                guid: jobItem.guid,
+                title: jobItem.title,
+                reason: 'Processing error',
+                error: jobError.message
+              });
             }
           }
           
@@ -49,14 +110,15 @@ class ImportService {
               importLog.totalImported = processed;
               importLog.newJobs = newJobs;
               importLog.updatedJobs = updatedJobs;
+              importLog.failedJobs = failedJobs;
               importLog.status = 'completed';
               await importLog.save();
             }
           }
           
-          logger.info(`Processed ${processed} jobs from ${feedName} (${newJobs} new, ${updatedJobs} updated)`);
+          logger.info(`Processed ${processed} jobs from ${feedName} (${newJobs} new, ${updatedJobs} updated, ${failedJobs.length} failed)`);
           
-          return { success: true, processed, newJobs, updatedJobs };
+          return { success: true, processed, newJobs, updatedJobs, failedJobs: failedJobs.length };
         } catch (error) {
           logger.error(`Error processing job ${job.id}:`, error);
           throw error;

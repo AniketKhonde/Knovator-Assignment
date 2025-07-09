@@ -69,6 +69,9 @@ api.interceptors.response.use(
 export const importAPI = {
   // Get import status
   getStatus: () => retryRequest(() => api.get('/api/import/status')),
+  
+  // Start manual import
+  startImport: () => retryRequest(() => api.post('/api/import/start')),
 };
 
 // Import logs API functions
@@ -78,6 +81,36 @@ export const importLogsAPI = {
   
   // Get import statistics overview
   getStats: (days = 30) => retryRequest(() => api.get('/api/import-logs/stats/overview', { params: { days } })),
+};
+
+// Jobs API functions
+export const jobsAPI = {
+  // Get all jobs with pagination and filtering
+  getJobs: (params = {}) => retryRequest(() => api.get('/api/jobs', { params })),
+  
+  // Get job statistics
+  getStats: () => retryRequest(() => api.get('/api/jobs/stats')),
+  
+  // Get a specific job by ID
+  getJob: (id) => retryRequest(() => api.get(`/api/jobs/${id}`)),
+  
+  // Get jobs by company
+  getJobsByCompany: (company, params = {}) => retryRequest(() => api.get(`/api/jobs/company/${company}`, { params })),
+  
+  // Get jobs by location
+  getJobsByLocation: (location, params = {}) => retryRequest(() => api.get(`/api/jobs/location/${location}`, { params })),
+  
+  // Get jobs by category
+  getJobsByCategory: (category, params = {}) => retryRequest(() => api.get(`/api/jobs/category/${category}`, { params })),
+  
+  // Get remote jobs
+  getRemoteJobs: (params = {}) => retryRequest(() => api.get('/api/jobs/remote/all', { params })),
+  
+  // Get filter options
+  getFilterOptions: () => retryRequest(() => api.get('/api/jobs/filters/options')),
+  
+  // Track job application
+  trackApplication: (id) => retryRequest(() => api.post(`/api/jobs/${id}/apply`)),
 };
 
 export default api; 
