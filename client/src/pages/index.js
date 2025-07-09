@@ -59,6 +59,11 @@ export default function HomePage() {
     importInProgress: false
   });
   const [manualImportLoading, setManualImportLoading] = useState(false);
+  const [toastShown, setToastShown] = useState({
+    importCompleted: false,
+    importStarted: false,
+    cronTriggered: false
+  });
 
   useEffect(() => {
     if (activeTab === 'dashboard') {
@@ -103,8 +108,11 @@ export default function HomePage() {
         lastCronHit: data
       }));
       
-      if (data.type === 'cron-triggered') {
+      if (data.type === 'cron-triggered' && !toastShown.cronTriggered) {
         toast.success('🕐 Cron job triggered import process');
+        setToastShown(prev => ({ ...prev, cronTriggered: true }));
+        // Reset after 5 seconds
+        setTimeout(() => setToastShown(prev => ({ ...prev, cronTriggered: false })), 5000);
       } else if (data.type === 'cron-skipped') {
         toast.info('⏭️ Cron skipped - import already running');
       }
@@ -119,10 +127,15 @@ export default function HomePage() {
         lastImportProgress: data
       }));
       
-      if (data.type === 'cron-import') {
-        toast.success('🚀 Scheduled import started by cron');
-      } else {
-        toast.success('🚀 Import process started');
+      if (!toastShown.importStarted) {
+        if (data.type === 'cron-import') {
+          toast.success('🚀 Scheduled import started by cron');
+        } else {
+          toast.success('🚀 Import process started');
+        }
+        setToastShown(prev => ({ ...prev, importStarted: true }));
+        // Reset after 5 seconds
+        setTimeout(() => setToastShown(prev => ({ ...prev, importStarted: false })), 5000);
       }
       
       // Reload dashboard data
@@ -147,10 +160,15 @@ export default function HomePage() {
         lastImportProgress: data
       }));
       
-      if (data.type === 'cron-import') {
-        toast.success(`✅ Scheduled import completed! Processed ${data.totalFeeds} feeds`);
-      } else {
-        toast.success(`✅ Import completed! Processed ${data.totalFeeds} feeds`);
+      if (!toastShown.importCompleted) {
+        if (data.type === 'cron-import') {
+          toast.success(`Scheduled import completed! Processed ${data.totalFeeds} feeds`);
+        } else {
+          toast.success(`Import completed! Processed ${data.totalFeeds} feeds`);
+        }
+        setToastShown(prev => ({ ...prev, importCompleted: true }));
+        // Reset after 5 seconds
+        setTimeout(() => setToastShown(prev => ({ ...prev, importCompleted: false })), 5000);
       }
       
       // Reload dashboard data and logs
@@ -172,6 +190,12 @@ export default function HomePage() {
     // Cleanup on unmount
     return () => {
       socketService.cleanup();
+      // Reset toast flags
+      setToastShown({
+        importCompleted: false,
+        importStarted: false,
+        cronTriggered: false
+      });
     };
   };
 
@@ -667,7 +691,7 @@ export default function HomePage() {
                   <div className="ml-4">
                         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Imports</p>
                         <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                          1,247
+                          {formatNumber(stats.importStats?.totalImports || 0)}
                     </p>
                   </div>
                 </div>
@@ -684,7 +708,7 @@ export default function HomePage() {
                   <div className="ml-4">
                         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Successful Imports</p>
                         <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                          1,189
+                          {formatNumber(stats.importStats?.successfulImports || 0)}
                     </p>
                   </div>
                 </div>
@@ -701,7 +725,7 @@ export default function HomePage() {
                   <div className="ml-4">
                         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Failed Imports</p>
                         <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                          58
+                          {formatNumber(stats.importStats?.failedImports || 0)}
                         </p>
                       </div>
                     </div>

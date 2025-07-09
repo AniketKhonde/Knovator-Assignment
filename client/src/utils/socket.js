@@ -66,6 +66,10 @@ class SocketService {
   // Listen for import events
   onImportEvent(event, callback) {
     if (this.socket) {
+      // Remove existing listeners for this event to prevent duplicates
+      this.socket.off(event);
+      
+      // Add new listener
       this.socket.on(event, callback);
       
       // Store listener for cleanup

@@ -36,7 +36,7 @@ class QueueService {
   getQueue(name) {
     if (!this.queues.has(name)) {
       const queue = new Queue(name, {
-        connection: {
+        connection: process.env.REDIS_URL || {
           host: process.env.REDIS_HOST || 'localhost',
           port: process.env.REDIS_PORT || 6379,
           password: process.env.REDIS_PASSWORD,
@@ -72,7 +72,7 @@ class QueueService {
     }
 
     const worker = new Worker(queueName, processor, {
-      connection: {
+      connection: process.env.REDIS_URL || {
         host: process.env.REDIS_HOST || 'localhost',
         port: process.env.REDIS_PORT || 6379,
         password: process.env.REDIS_PASSWORD,

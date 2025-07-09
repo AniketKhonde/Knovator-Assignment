@@ -37,8 +37,6 @@ class ImportService {
           // Process individual jobs
           for (const jobItem of jobData) {
             try {
-              processed++;
-              
               // Check if job already exists
               const existingJob = await Job.findOne({ 
                 originalGuid: jobItem.guid,
@@ -65,6 +63,7 @@ class ImportService {
                 
                 await existingJob.save();
                 updatedJobs++;
+                processed++; // Only increment after successful save
               } else {
                 // Create new job
                 const newJob = new Job({
@@ -90,9 +89,16 @@ class ImportService {
                 
                 await newJob.save();
                 newJobs++;
+                processed++; // Only increment after successful save
               }
             } catch (jobError) {
               logger.error(`Error processing individual job:`, jobError);
+              logger.error(`Failed job details:`, {
+                guid: jobItem.guid,
+                title: jobItem.title,
+                company: jobItem.company,
+                error: jobError.message
+              });
               failedJobs.push({
                 guid: jobItem.guid,
                 title: jobItem.title,
