@@ -3,12 +3,14 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
+const { createServer } = require('http');
 require('dotenv').config();
 
 const connectDB = require('../src/config/database');
 const { connectRedis } = require('../src/config/redis');
 const { errorHandler } = require('../src/middleware/errorHandler');
 const logger = require('../src/utils/logger');
+const socketService = require('../src/services/socketService');
 
 // Import routes
 const importRoutes = require('../src/routes/import');
@@ -16,6 +18,7 @@ const importLogsRoutes = require('../src/routes/importLogs');
 const jobsRoutes = require('../src/routes/jobs');
 
 const app = express();
+const server = createServer(app);
 
 // Middleware
 app.use(helmet());
@@ -140,6 +143,9 @@ app.use('*', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
+// Initialize Socket.IO
+socketService.initialize(server);
+
 // Initialize connections on cold start
 let isInitialized = false;
 
@@ -157,12 +163,16 @@ const initializeConnections = async () => {
       logger.error('MongoDB connection failed:', error.message);
     }
     
-    // Connect to Redis
-    try {
-      await connectRedis();
-      logger.info('Redis connected successfully');
-    } catch (error) {
-      logger.error('Redis connection failed:', error.message);
+    // Connect to Redis (optional for Vercel)
+    if (process.env.REDIS_URL) {
+      try {
+        await connectRedis();
+        logger.info('Redis connected successfully');
+      } catch (error) {
+        logger.warn('Redis connection failed (optional for Vercel):', error.message);
+      }
+    } else {
+      logger.warn('REDIS_URL not set - Redis features will be disabled');
     }
     
     isInitialized = true;

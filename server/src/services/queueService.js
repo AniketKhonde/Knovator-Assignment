@@ -8,12 +8,21 @@ class QueueService {
     this.workers = new Map();
     this.schedulers = new Map();
     this.isInitialized = false;
+    this.redisAvailable = false;
   }
 
   async initialize() {
     if (this.isInitialized) return;
     
     try {
+      // Check if Redis URL is available
+      if (!process.env.REDIS_URL) {
+        logger.warn('REDIS_URL not set - Queue service will be disabled');
+        this.redisAvailable = false;
+        this.isInitialized = true;
+        return;
+      }
+
       // Test Redis connection with timeout
       const redisClient = getRedisClient();
       const pingPromise = redisClient.ping();
@@ -23,17 +32,29 @@ class QueueService {
       
       await Promise.race([pingPromise, timeoutPromise]);
       
+      this.redisAvailable = true;
       this.isInitialized = true;
       logger.info('Queue service initialized successfully');
     } catch (error) {
-      logger.error('Failed to initialize queue service:', error);
-      this.isInitialized = false;
-      throw error;
+      logger.warn('Failed to initialize queue service (Redis not available):', error.message);
+      this.redisAvailable = false;
+      this.isInitialized = true;
+      // Don't throw error - allow service to continue without Redis
     }
+  }
+
+  // Check if Redis is available
+  isRedisAvailable() {
+    return this.redisAvailable;
   }
 
   // Create or get a queue
   getQueue(name) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot create queue '${name}' - Redis not available`);
+      return null;
+    }
+
     if (!this.queues.has(name)) {
       const queue = new Queue(name, {
         connection: process.env.REDIS_URL || {
@@ -66,6 +87,11 @@ class QueueService {
 
   // Create a worker for processing jobs
   createWorker(queueName, processor, options = {}) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot create worker for queue '${queueName}' - Redis not available`);
+      return null;
+    }
+
     if (this.workers.has(queueName)) {
       logger.warn(`Worker for queue '${queueName}' already exists`);
       return this.workers.get(queueName);
@@ -118,6 +144,11 @@ class QueueService {
 
   // Create a scheduler for delayed jobs (commented out for BullMQ v5 compatibility)
   createScheduler(queueName) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot create scheduler for queue '${queueName}' - Redis not available`);
+      return null;
+    }
+
     logger.warn('QueueScheduler is not available in BullMQ v5, skipping scheduler creation');
     return null;
     
@@ -141,8 +172,18 @@ class QueueService {
 
   // Add a job to the queue
   async addJob(queueName, jobData, options = {}) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot add job to queue '${queueName}' - Redis not available`);
+      return null;
+    }
+
     logger.info(`addJob: Starting to add job to queue '${queueName}'`);
     const queue = this.getQueue(queueName);
+    if (!queue) {
+      logger.error(`Queue '${queueName}' not available`);
+      return null;
+    }
+    
     logger.info(`addJob: Got queue instance for '${queueName}'`);
     
     logger.info(`addJob: Adding job with data size: ${JSON.stringify(jobData).length} characters`);
@@ -171,7 +212,16 @@ class QueueService {
 
   // Add multiple jobs to the queue
   async addJobs(queueName, jobsData, options = {}) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot add jobs to queue '${queueName}' - Redis not available`);
+      return [];
+    }
+
     const queue = this.getQueue(queueName);
+    if (!queue) {
+      logger.error(`Queue '${queueName}' not available`);
+      return [];
+    }
     
     const jobs = await queue.addBulk(
       jobsData.map((data, index) => ({
@@ -191,12 +241,32 @@ class QueueService {
 
   // Get job by ID
   async getJob(queueName, jobId) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot get job from queue '${queueName}' - Redis not available`);
+      return null;
+    }
+
     const queue = this.getQueue(queueName);
+    if (!queue) {
+      return null;
+    }
     return await queue.getJob(jobId);
   }
 
   // Get queue statistics
   async getQueueStats(queueName) {
+    if (!this.redisAvailable) {
+      return {
+        waiting: 0,
+        active: 0,
+        completed: 0,
+        failed: 0,
+        delayed: 0,
+        paused: false,
+        redisAvailable: false
+      };
+    }
+
     try {
       const queue = this.getQueue(queueName);
       
@@ -252,21 +322,48 @@ class QueueService {
 
   // Pause a queue
   async pauseQueue(queueName) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot pause queue '${queueName}' - Redis not available`);
+      return;
+    }
+
     const queue = this.getQueue(queueName);
+    if (!queue) {
+      logger.error(`Queue '${queueName}' not available`);
+      return;
+    }
     await queue.pause();
     logger.info(`Queue '${queueName}' paused`);
   }
 
   // Resume a queue
   async resumeQueue(queueName) {
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot resume queue '${queueName}' - Redis not available`);
+      return;
+    }
+
     const queue = this.getQueue(queueName);
+    if (!queue) {
+      logger.error(`Queue '${queueName}' not available`);
+      return;
+    }
     await queue.resume();
     logger.info(`Queue '${queueName}' resumed`);
   }
 
   // Clean completed jobs
   async cleanQueue(queueName, grace = 1000 * 60 * 60 * 24) { // 24 hours
+    if (!this.redisAvailable) {
+      logger.warn(`Cannot clean queue '${queueName}' - Redis not available`);
+      return;
+    }
+
     const queue = this.getQueue(queueName);
+    if (!queue) {
+      logger.error(`Queue '${queueName}' not available`);
+      return;
+    }
     await queue.clean(grace, 'completed');
     await queue.clean(grace, 'failed');
     logger.info(`Queue '${queueName}' cleaned`);
@@ -351,7 +448,7 @@ class QueueService {
       
       return {
         status: 'healthy',
-        redis: 'connected',
+        redis: this.redisAvailable ? 'connected' : 'disconnected',
         queues: this.queues.size,
         workers: this.workers.size,
         connection: {
@@ -364,7 +461,7 @@ class QueueService {
       logger.error('Queue service health check failed:', error);
       return {
         status: 'unhealthy',
-        redis: 'disconnected',
+        redis: this.redisAvailable ? 'connected' : 'disconnected',
         error: error.message,
         queues: this.queues.size,
         workers: this.workers.size,

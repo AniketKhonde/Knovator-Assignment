@@ -15,128 +15,133 @@ class ImportService {
       // Initialize queue service
       await queueService.initialize();
       
-      // Create job-import queue
-      const queue = queueService.getQueue('job-import');
-      
-      // Create worker for processing jobs
-      const worker = queueService.createWorker('job-import', async (job) => {
-        logger.info(`Processing job ${job.id}: ${job.data.feedName}`);
+      // Only create queue and worker if Redis is available
+      if (queueService.isRedisAvailable()) {
+        // Create job-import queue
+        const queue = queueService.getQueue('job-import');
         
-        try {
-          // Process the job data
-          const { jobData, feedName, feedUrl, importLogId } = job.data;
+        // Create worker for processing jobs
+        const worker = queueService.createWorker('job-import', async (job) => {
+          logger.info(`Processing job ${job.id}: ${job.data.feedName}`);
           
-          // Import Job model
-          const Job = require('../models/Job');
-          
-          let processed = 0;
-          let newJobs = 0;
-          let updatedJobs = 0;
-          let failedJobs = [];
-          
-          // Process individual jobs
-          for (const jobItem of jobData) {
-            try {
-              // Check if job already exists
-              const existingJob = await Job.findOne({ 
-                originalGuid: jobItem.guid,
-                sourceFeed: feedUrl 
-              });
-              
-              if (existingJob) {
-                // Update existing job
-                existingJob.title = jobItem.title || existingJob.title;
-                existingJob.company = jobItem.company || existingJob.company;
-                existingJob.location = jobItem.location || existingJob.location;
-                existingJob.description = jobItem.description || existingJob.description;
-                existingJob.salary = jobItem.salary || existingJob.salary;
-                existingJob.requirements = jobItem.requirements || existingJob.requirements;
-                existingJob.type = jobItem.type || existingJob.type;
-                existingJob.category = jobItem.category || existingJob.category;
-                existingJob.industry = jobItem.industry || existingJob.industry;
-                existingJob.remote = jobItem.remote || existingJob.remote;
-                existingJob.applicationUrl = jobItem.applicationUrl || existingJob.applicationUrl;
-                existingJob.applicationEmail = jobItem.applicationEmail || existingJob.applicationEmail;
-                existingJob.publishedDate = jobItem.publishedDate || existingJob.publishedDate;
-                existingJob.rawData = jobItem;
-                existingJob.updatedAt = new Date();
-                
-                await existingJob.save();
-                updatedJobs++;
-                processed++; // Only increment after successful save
-              } else {
-                // Create new job
-                const newJob = new Job({
-                  title: jobItem.title,
-                  company: jobItem.company,
-                  location: jobItem.location,
-                  description: jobItem.description,
-                  salary: jobItem.salary,
-                  requirements: jobItem.requirements,
-                  type: jobItem.type,
-                  category: jobItem.category,
-                  industry: jobItem.industry,
-                  remote: jobItem.remote,
-                  applicationUrl: jobItem.applicationUrl,
-                  applicationEmail: jobItem.applicationEmail,
-                  sourceFeed: feedUrl,
-                  sourceName: feedName,
+          try {
+            // Process the job data
+            const { jobData, feedName, feedUrl, importLogId } = job.data;
+            
+            // Import Job model
+            const Job = require('../models/Job');
+            
+            let processed = 0;
+            let newJobs = 0;
+            let updatedJobs = 0;
+            let failedJobs = [];
+            
+            // Process individual jobs
+            for (const jobItem of jobData) {
+              try {
+                // Check if job already exists
+                const existingJob = await Job.findOne({ 
                   originalGuid: jobItem.guid,
-                  publishedDate: jobItem.publishedDate,
-                  status: 'active',
-                  rawData: jobItem
+                  sourceFeed: feedUrl 
                 });
                 
-                await newJob.save();
-                newJobs++;
-                processed++; // Only increment after successful save
+                if (existingJob) {
+                  // Update existing job
+                  existingJob.title = jobItem.title || existingJob.title;
+                  existingJob.company = jobItem.company || existingJob.company;
+                  existingJob.location = jobItem.location || existingJob.location;
+                  existingJob.description = jobItem.description || existingJob.description;
+                  existingJob.salary = jobItem.salary || existingJob.salary;
+                  existingJob.requirements = jobItem.requirements || existingJob.requirements;
+                  existingJob.type = jobItem.type || existingJob.type;
+                  existingJob.category = jobItem.category || existingJob.category;
+                  existingJob.industry = jobItem.industry || existingJob.industry;
+                  existingJob.remote = jobItem.remote || existingJob.remote;
+                  existingJob.applicationUrl = jobItem.applicationUrl || existingJob.applicationUrl;
+                  existingJob.applicationEmail = jobItem.applicationEmail || existingJob.applicationEmail;
+                  existingJob.publishedDate = jobItem.publishedDate || existingJob.publishedDate;
+                  existingJob.rawData = jobItem;
+                  existingJob.updatedAt = new Date();
+                  
+                  await existingJob.save();
+                  updatedJobs++;
+                  processed++; // Only increment after successful save
+                } else {
+                  // Create new job
+                  const newJob = new Job({
+                    title: jobItem.title,
+                    company: jobItem.company,
+                    location: jobItem.location,
+                    description: jobItem.description,
+                    salary: jobItem.salary,
+                    requirements: jobItem.requirements,
+                    type: jobItem.type,
+                    category: jobItem.category,
+                    industry: jobItem.industry,
+                    remote: jobItem.remote,
+                    applicationUrl: jobItem.applicationUrl,
+                    applicationEmail: jobItem.applicationEmail,
+                    sourceFeed: feedUrl,
+                    sourceName: feedName,
+                    originalGuid: jobItem.guid,
+                    publishedDate: jobItem.publishedDate,
+                    status: 'active',
+                    rawData: jobItem
+                  });
+                  
+                  await newJob.save();
+                  newJobs++;
+                  processed++; // Only increment after successful save
+                }
+              } catch (jobError) {
+                logger.error(`Error processing individual job:`, jobError);
+                logger.error(`Failed job details:`, {
+                  guid: jobItem.guid,
+                  title: jobItem.title,
+                  company: jobItem.company,
+                  error: jobError.message
+                });
+                failedJobs.push({
+                  guid: jobItem.guid,
+                  title: jobItem.title,
+                  reason: 'Processing error',
+                  error: jobError.message
+                });
               }
-            } catch (jobError) {
-              logger.error(`Error processing individual job:`, jobError);
-              logger.error(`Failed job details:`, {
-                guid: jobItem.guid,
-                title: jobItem.title,
-                company: jobItem.company,
-                error: jobError.message
-              });
-              failedJobs.push({
-                guid: jobItem.guid,
-                title: jobItem.title,
-                reason: 'Processing error',
-                error: jobError.message
-              });
             }
-          }
-          
-          // Update import log with processing results
-          if (importLogId) {
-            const ImportLog = require('../models/ImportLog');
-            const importLog = await ImportLog.findById(importLogId);
-            if (importLog) {
-              importLog.totalImported = processed;
-              importLog.newJobs = newJobs;
-              importLog.updatedJobs = updatedJobs;
-              importLog.failedJobs = failedJobs;
-              importLog.status = 'completed';
-              await importLog.save();
+            
+            // Update import log with processing results
+            if (importLogId) {
+              const ImportLog = require('../models/ImportLog');
+              const importLog = await ImportLog.findById(importLogId);
+              if (importLog) {
+                importLog.totalImported = processed;
+                importLog.newJobs = newJobs;
+                importLog.updatedJobs = updatedJobs;
+                importLog.failedJobs = failedJobs;
+                importLog.status = 'completed';
+                await importLog.save();
+              }
             }
+            
+            logger.info(`Processed ${processed} jobs from ${feedName} (${newJobs} new, ${updatedJobs} updated, ${failedJobs.length} failed)`);
+            
+            return { success: true, processed, newJobs, updatedJobs, failedJobs: failedJobs.length };
+          } catch (error) {
+            logger.error(`Error processing job ${job.id}:`, error);
+            throw error;
           }
-          
-          logger.info(`Processed ${processed} jobs from ${feedName} (${newJobs} new, ${updatedJobs} updated, ${failedJobs.length} failed)`);
-          
-          return { success: true, processed, newJobs, updatedJobs, failedJobs: failedJobs.length };
-        } catch (error) {
-          logger.error(`Error processing job ${job.id}:`, error);
-          throw error;
-        }
-      }, {
-        concurrency: parseInt(process.env.CONCURRENCY) || 5
-      });
-      
-      logger.info('Import service initialized with BullMQ queue system');
+        }, {
+          concurrency: parseInt(process.env.CONCURRENCY) || 5
+        });
+        
+        logger.info('Import service initialized with BullMQ queue system');
+      } else {
+        logger.warn('Redis not available - Import service will process jobs synchronously');
+      }
     } catch (error) {
       logger.error('Failed to initialize import service:', error);
-      throw error;
+      // Don't throw error - allow service to continue without queue
     }
   }
 
@@ -246,46 +251,148 @@ class ImportService {
       });
       await importLog.save();
       
-      // Add jobs to BullMQ queue for processing
-      logger.info(`Adding ${feedResult.jobs.length} jobs to BullMQ queue for ${feed.name}`);
-      
-      try {
-        const job = await queueService.addJob('job-import', {
-          jobData: feedResult.jobs,
-          feedName: feed.name,
-          feedUrl: feed.url,
-          importLogId: importLog._id
-        }, {
-          name: `import-${feed.name}`,
-          priority: 1
-        });
+      // Check if Redis/queue is available
+      if (queueService.isRedisAvailable()) {
+        // Add jobs to BullMQ queue for processing
+        logger.info(`Adding ${feedResult.jobs.length} jobs to BullMQ queue for ${feed.name}`);
         
-        logger.info(`Job ${job.id} added to queue for ${feed.name}`);
+        try {
+          const job = await queueService.addJob('job-import', {
+            jobData: feedResult.jobs,
+            feedName: feed.name,
+            feedUrl: feed.url,
+            importLogId: importLog._id
+          }, {
+            name: `import-${feed.name}`,
+            priority: 1
+          });
+          
+          logger.info(`Job ${job.id} added to queue for ${feed.name}`);
+          
+          // Update import log with queue job ID
+          importLog.queueJobId = job.id;
+          await importLog.save();
+          
+          logger.info(`Jobs queued for ${feed.name}: ${feedResult.jobs.length} jobs added to BullMQ queue`);
+          
+          return {
+            feed: feed.name,
+            success: true,
+            jobsFetched: feedResult.jobs.length,
+            jobsQueued: feedResult.jobs.length,
+            duration: feedResult.duration,
+            queueJobId: job.id
+          };
+          
+        } catch (error) {
+          logger.error(`Error adding jobs to queue for ${feed.name}:`, error);
+          
+          // Update import log with error
+          importLog.status = 'failed';
+          importLog.error = error.message;
+          await importLog.save();
+          
+          throw error;
+        }
+      } else {
+        // Process jobs synchronously when Redis is not available
+        logger.info(`Processing ${feedResult.jobs.length} jobs synchronously for ${feed.name} (Redis not available)`);
         
-        // Update import log with queue job ID
-        importLog.queueJobId = job.id;
+        const Job = require('../models/Job');
+        let processed = 0;
+        let newJobs = 0;
+        let updatedJobs = 0;
+        let failedJobs = [];
+        
+        // Process individual jobs
+        for (const jobItem of feedResult.jobs) {
+          try {
+            // Check if job already exists
+            const existingJob = await Job.findOne({ 
+              originalGuid: jobItem.guid,
+              sourceFeed: feed.url 
+            });
+            
+            if (existingJob) {
+              // Update existing job
+              existingJob.title = jobItem.title || existingJob.title;
+              existingJob.company = jobItem.company || existingJob.company;
+              existingJob.location = jobItem.location || existingJob.location;
+              existingJob.description = jobItem.description || existingJob.description;
+              existingJob.salary = jobItem.salary || existingJob.salary;
+              existingJob.requirements = jobItem.requirements || existingJob.requirements;
+              existingJob.type = jobItem.type || existingJob.type;
+              existingJob.category = jobItem.category || existingJob.category;
+              existingJob.industry = jobItem.industry || existingJob.industry;
+              existingJob.remote = jobItem.remote || existingJob.remote;
+              existingJob.applicationUrl = jobItem.applicationUrl || existingJob.applicationUrl;
+              existingJob.applicationEmail = jobItem.applicationEmail || existingJob.applicationEmail;
+              existingJob.publishedDate = jobItem.publishedDate || existingJob.publishedDate;
+              existingJob.rawData = jobItem;
+              existingJob.updatedAt = new Date();
+              
+              await existingJob.save();
+              updatedJobs++;
+              processed++;
+            } else {
+              // Create new job
+              const newJob = new Job({
+                title: jobItem.title,
+                company: jobItem.company,
+                location: jobItem.location,
+                description: jobItem.description,
+                salary: jobItem.salary,
+                requirements: jobItem.requirements,
+                type: jobItem.type,
+                category: jobItem.category,
+                industry: jobItem.industry,
+                remote: jobItem.remote,
+                applicationUrl: jobItem.applicationUrl,
+                applicationEmail: jobItem.applicationEmail,
+                sourceFeed: feed.url,
+                sourceName: feed.name,
+                originalGuid: jobItem.guid,
+                publishedDate: jobItem.publishedDate,
+                status: 'active',
+                rawData: jobItem
+              });
+              
+              await newJob.save();
+              newJobs++;
+              processed++;
+            }
+          } catch (jobError) {
+            logger.error(`Error processing individual job:`, jobError);
+            failedJobs.push({
+              guid: jobItem.guid,
+              title: jobItem.title,
+              reason: 'Processing error',
+              error: jobError.message
+            });
+          }
+        }
+        
+        // Update import log with processing results
+        importLog.totalImported = processed;
+        importLog.newJobs = newJobs;
+        importLog.updatedJobs = updatedJobs;
+        importLog.failedJobs = failedJobs;
+        importLog.status = 'completed';
         await importLog.save();
         
-        logger.info(`Jobs queued for ${feed.name}: ${feedResult.jobs.length} jobs added to BullMQ queue`);
+        logger.info(`Processed ${processed} jobs from ${feed.name} synchronously (${newJobs} new, ${updatedJobs} updated, ${failedJobs.length} failed)`);
         
         return {
           feed: feed.name,
           success: true,
           jobsFetched: feedResult.jobs.length,
-          jobsQueued: feedResult.jobs.length,
+          jobsProcessed: processed,
+          newJobs,
+          updatedJobs,
+          failedJobs: failedJobs.length,
           duration: feedResult.duration,
-          queueJobId: job.id
+          processingMode: 'synchronous'
         };
-        
-      } catch (error) {
-        logger.error(`Error adding jobs to queue for ${feed.name}:`, error);
-        
-        // Update import log with error
-        importLog.status = 'failed';
-        importLog.error = error.message;
-        await importLog.save();
-        
-        throw error;
       }
 
     } catch (error) {
@@ -293,8 +400,6 @@ class ImportService {
       throw error;
     }
   }
-
-
 
   // Get import status
   getImportStatus() {
@@ -346,20 +451,20 @@ class ImportService {
     }
   }
 
-
-
   // Clean up completed jobs
   async cleanupQueue() {
     try {
-      await queueService.cleanQueue('job-import');
-      logger.info('Queue cleanup completed successfully');
+      if (queueService.isRedisAvailable()) {
+        await queueService.cleanQueue('job-import');
+        logger.info('Queue cleanup completed successfully');
+      } else {
+        logger.warn('Queue cleanup skipped - Redis not available');
+      }
     } catch (error) {
       logger.error('Error cleaning queue:', error);
       throw error;
     }
   }
-
-
 
   // Stop the import service
   async stop() {
