@@ -1,5 +1,5 @@
 const { Queue, Worker } = require('bullmq');
-const { getRedisClient, getRedisStatus } = require('../config/redis');
+const Redis = require('redis');
 const logger = require('../utils/logger');
 
 class QueueService {
@@ -9,6 +9,7 @@ class QueueService {
     this.schedulers = new Map();
     this.isInitialized = false;
     this.redisAvailable = false;
+    this.redisClient = null;
   }
 
   async initialize() {
@@ -17,15 +18,32 @@ class QueueService {
     try {
       // Check if Redis URL is available
       if (!process.env.REDIS_URL) {
-        logger.warn('REDIS_URL not set - Queue service will be disabled');
+        logger.warn('REDIS_URL environment variable is not set - Queue service will be disabled');
         this.redisAvailable = false;
         this.isInitialized = true;
         return;
       }
 
+      // Create our own Redis client for testing
+      logger.info('Testing Redis connection for queue service...');
+      this.redisClient = Redis.createClient({
+        url: process.env.REDIS_URL,
+        socket: {
+          connectTimeout: 10000,
+          commandTimeout: 5000,
+          keepAlive: 30000,
+          reconnectStrategy: (retries) => {
+            if (retries > 5) {
+              logger.error('Redis max reconnection attempts reached');
+              return new Error('Max reconnection attempts reached');
+            }
+            return Math.min(retries * 1000, 5000);
+          }
+        }
+      });
+
       // Test Redis connection with timeout
-      const redisClient = getRedisClient();
-      const pingPromise = redisClient.ping();
+      const pingPromise = this.redisClient.ping();
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Redis initialization timeout')), 10000);
       });
@@ -34,7 +52,7 @@ class QueueService {
       
       this.redisAvailable = true;
       this.isInitialized = true;
-      logger.info('Queue service initialized successfully');
+      logger.info('Queue service initialized successfully with Redis');
     } catch (error) {
       logger.warn('Failed to initialize queue service (Redis not available):', error.message);
       this.redisAvailable = false;
@@ -56,17 +74,14 @@ class QueueService {
     }
 
     if (!this.queues.has(name)) {
+      // Ensure REDIS_URL is available
+      if (!process.env.REDIS_URL) {
+        logger.error('REDIS_URL environment variable is not set');
+        return null;
+      }
+
       const queue = new Queue(name, {
-        connection: process.env.REDIS_URL || {
-          host: process.env.REDIS_HOST || 'localhost',
-          port: process.env.REDIS_PORT || 6379,
-          password: process.env.REDIS_PASSWORD,
-          db: process.env.REDIS_DB || 0,
-          maxRetriesPerRequest: 3,
-          enableReadyCheck: true,
-          retryDelayOnFailover: 100,
-          lazyConnect: true
-        },
+        connection: process.env.REDIS_URL,
         defaultJobOptions: {
           removeOnComplete: 100, // Keep last 100 completed jobs
           removeOnFail: 50,      // Keep last 50 failed jobs
@@ -79,7 +94,7 @@ class QueueService {
       });
 
       this.queues.set(name, queue);
-      logger.info(`Queue '${name}' created`);
+      logger.info(`Queue '${name}' created with Redis URL`);
     }
 
     return this.queues.get(name);
@@ -97,17 +112,14 @@ class QueueService {
       return this.workers.get(queueName);
     }
 
+    // Ensure REDIS_URL is available
+    if (!process.env.REDIS_URL) {
+      logger.error('REDIS_URL environment variable is not set');
+      return null;
+    }
+
     const worker = new Worker(queueName, processor, {
-      connection: process.env.REDIS_URL || {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
-        password: process.env.REDIS_PASSWORD,
-        db: process.env.REDIS_DB || 0,
-        maxRetriesPerRequest: 3,
-        enableReadyCheck: true,
-        retryDelayOnFailover: 100,
-        lazyConnect: true
-      },
+      connection: process.env.REDIS_URL,
       concurrency: options.concurrency || parseInt(process.env.CONCURRENCY) || 5,
       ...options
     });
