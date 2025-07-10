@@ -38,6 +38,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// API health check endpoint (for Render)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
 // Keep-alive endpoint to prevent server sleep
 app.get('/keep-alive', (req, res) => {
   res.json({ 

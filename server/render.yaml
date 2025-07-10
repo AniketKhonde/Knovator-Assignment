@@ -1,16 +1,26 @@
 services:
   - type: web
-    name: knovator-job-importer
+    name: knovator-job-importer-backend
     env: node
     plan: starter
     buildCommand: npm install
-    startCommand: npm run start:with-check
-    healthCheckPath: /health
+    startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: CONCURRENCY
+        value: 5
     autoDeploy: true
     # Prevent sleep by setting minimum instances
     minInstances: 1
