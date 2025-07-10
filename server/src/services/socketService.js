@@ -11,7 +11,32 @@ class SocketService {
   initialize(server) {
     this.io = new Server(server, {
       cors: {
-        origin: process.env.CLIENT_URL,
+        origin: function (origin, callback) {
+          // Allow requests with no origin (like mobile apps or curl requests)
+          if (!origin) return callback(null, true);
+          
+          const allowedOrigins = [
+            process.env.CLIENT_URL,
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'https://knovator-assignment.vercel.app',
+            'https://knovator-assignment-frontend.vercel.app'
+          ].filter(Boolean); // Remove undefined values
+          
+          // Check if the origin is in the allowed list
+          if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+          
+          // For development, allow all origins
+          if (process.env.NODE_ENV === 'development') {
+            return callback(null, true);
+          }
+          
+          // Log blocked origins for debugging
+          logger.warn(`Socket.IO CORS blocked origin: ${origin}`);
+          return callback(new Error('Not allowed by CORS'));
+        },
         methods: ['GET', 'POST'],
         credentials: true
       },
