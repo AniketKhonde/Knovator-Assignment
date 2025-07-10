@@ -321,7 +321,7 @@ export default function HomePage() {
 
   const techStack = [
     { name: 'Node.js', image: '/images/nodejs.png', color: 'text-green-600', bg: 'bg-green-100' },
-    { name: 'React', image: '/images/react js.png', color: 'text-blue-600', bg: 'bg-blue-100' },
+    { name: 'React', image: '/images/reactjs.png', color: 'text-blue-600', bg: 'bg-blue-100' },
     { name: 'MongoDB', image: '/images/mongodb.png', color: 'text-green-600', bg: 'bg-green-100' },
     { name: 'Redis', image: '/images/redis.png', color: 'text-red-600', bg: 'bg-red-100' },
     { name: 'BullMQ', image: '/images/bullmq.png', color: 'text-purple-600', bg: 'bg-purple-100' },
@@ -489,7 +489,15 @@ export default function HomePage() {
                             src={tech.image} 
                             alt={tech.name}
                             className="h-10 w-10 object-contain"
+                            onError={(e) => {
+                              console.error(`Failed to load image: ${tech.image}`);
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
                           />
+                          <div className="h-10 w-10 flex items-center justify-center text-2xl font-bold text-gray-500" style={{ display: 'none' }}>
+                            {tech.name.charAt(0)}
+                          </div>
                         </div>
                         <h3 className="font-semibold text-gray-900 dark:text-white">{tech.name}</h3>
                       </div>
